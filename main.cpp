@@ -49,7 +49,7 @@ int main() {
 
     flecs::world ecs;
     ecs.set<flecs::Rest>({});
-    //ecs.import<flecs::monitor>();
+    ecs.import<flecs::monitor>();
 
     flecs::log::set_level(2);
 
@@ -178,24 +178,28 @@ int main() {
     auto RenderRule = ecs.rule_builder()
             .with<IsOn>("$PotentialNode")
             .with<Node>().src("$PotentialNode")
+            .instanced()
             .build();
 
-    ecs.system<Renderable, Node>("Render")
+
+    int NodeVar = RenderRule.find_var("PotentialNode");
+
+    ecs.system<Renderable, IsOn>("Render")
             .kind(flecs::PostUpdate)
             .read<Player>()
-            .term_at(2).first<IsOn>()//.ctx(&RenderRule)
-            .iter([](flecs::iter& it) {
-                for (auto i : it) {
-                    auto RenderableEnt = it.entity(i);
-                    flecs::entity renderable = it.pair(2).first();
-                    flecs::entity node = it.pair(2).second();
-                    auto NodeComp = node.get<Node>();
+            .instanced()
+            .term_at(2).second(flecs::Wildcard)
+            .iter([&](flecs::iter& it) {
+                RenderRule.each([&](flecs::iter& itr, size_t index) {
+                    auto Entity = itr.entity(index);
+                    auto NodeComp = itr.get_var(NodeVar).get<Node>();
+
                     if (NodeComp) {
                         int X = NodeComp->x * 90;
                         int Y = NodeComp->y * 90;
                         DrawRectangle( X, Y, 80, 80, RED);
                     }
-                }
+                });
             });
 
     ecs.system<Player>("EndRaylibRender")
