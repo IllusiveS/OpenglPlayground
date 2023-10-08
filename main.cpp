@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <thread>
 
 #include "raylib.h"
 #include "flecs.h"
@@ -48,62 +49,57 @@ int main() {
     std::cout << "Hello, World!" << std::endl;
 
     flecs::world ecs;
+
+    ecs.set_threads(std::thread::hardware_concurrency());
+
     ecs.set<flecs::Rest>({});
     ecs.import<flecs::monitor>();
 
-    flecs::log::set_level(2);
+    flecs::log::set_level(1);
 
     auto player = ecs.entity();
     player.add<Player>();
+
+    constexpr int MapSize = 30;
 
     ecs.system("StartupNodes")
         .kind(flecs::OnStart)
         .read<Node>()
         .write<Node>()
-        .iter([](flecs::iter& it) {
+        .multi_threaded()
+        .each([&](flecs::iter& it, size_t index) {
 
-            for (int x = -5; x < 5; x++) {
-                for (int y = -5; y < 5; y++) {
+            for (int x = -MapSize; x < MapSize; x++) {
+                for (int y = -MapSize; y < MapSize; y++) {
                     std::string NodeName = "Node:" + std::to_string(x) + ":" + std::to_string(y);
                     auto space = it.world().entity(NodeName.c_str());
 
                     space.set<Node>({x, y});
-                    //TODO add in another place
-                    //space.add<Renderable>();
-                    //space.add<Space>();
                 }
             }
-
-//            for (int x = 0; x < 10; x++) {
-//                auto wall = it.world().entity();
-//
-//                wall.set<Node>({x, 0});
-//                wall.add<Wall>();
-//            }
     });
 
     ecs.system<Node>("StartupNodesNeighbourhoods")
         .kind(flecs::OnStart)
         .read<Node>()
+        .write<Node>()
         .multi_threaded()
-        .iter([](flecs::iter& it, Node* node) {
-            for(auto i : it) {
-                const auto &NodeComp = node[i];
-                const auto X = NodeComp.x;
-                const auto Y = NodeComp.y;
+        .each([](flecs::iter& it, size_t index, Node& node) {
+            const auto &NodeComp = node;
+            const auto X = NodeComp.x;
+            const auto Y = NodeComp.y;
 
-                const Vector2 neighs[] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+            const Vector2 neighs[] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
-                for(auto &N : neighs) {
-                    auto found_neighbour = it.world()
+            for(auto &N : neighs) {
+                auto found_neighbour = it.world()
                         .filter<Node>()
                         .find([&](Node& FoundNode) {
                             return FoundNode.x == (X + N.x) && FoundNode.y == (Y + N.y);
                         });
 
-                        if (found_neighbour) {
-                            it.entity(i).add<NeighbourNode>(found_neighbour);
-                        }
+                if (found_neighbour) {
+                    it.entity(index).add<NeighbourNode>(found_neighbour);
                 }
             }
         });
@@ -111,14 +107,14 @@ int main() {
     ecs.system<Node>("SetupSpaceTiles")
         .kind(flecs::OnStart)
         .multi_threaded()
-        .iter([](flecs::iter &it, Node* nodes) {
-            for(auto i : it) {
-                auto space = it.world().entity();
+        .read<Node>()
+        .write<Node>()
+        .each([](flecs::iter &it, size_t index, Node& nodes) {
+            auto space = it.world().entity();
 
-                space.add<Renderable>();
-                space.add<Space>();
-                space.add<IsOn>(it.entity(i));
-            }
+            space.add<Renderable>();
+            space.add<Space>();
+            space.add<IsOn>(it.entity(index));
         });
 
     ecs.system("StartupRaylib")
@@ -175,31 +171,32 @@ int main() {
                 ClearBackground(RAYWHITE);
             });
 
-    auto RenderRule = ecs.rule_builder()
-            .with<IsOn>("$PotentialNode")
-            .with<Node>().src("$PotentialNode")
-            .instanced()
-            .build();
-
-
-    int NodeVar = RenderRule.find_var("PotentialNode");
+//    auto RenderRule = ecs.rule_builder()
+//            .with<IsOn>("$PotentialNode")
+//            .with<Node>().src("$PotentialNode")
+//            .instanced()
+//            .build();
+//
+//
+//    int NodeVar = RenderRule.find_var("PotentialNode");
 
     ecs.system<Renderable, IsOn>("Render")
             .kind(flecs::PostUpdate)
             .read<Player>()
-            .instanced()
-            .term_at(2).second(flecs::Wildcard)
-            .iter([&](flecs::iter& it) {
-                RenderRule.each([&](flecs::iter& itr, size_t index) {
-                    auto Entity = itr.entity(index);
-                    auto NodeComp = itr.get_var(NodeVar).get<Node>();
+            .term_at(2).second(flecs::Wildcard)//.ctx(&RenderRule)
+            .iter([](flecs::iter& it) {
+                for (auto i: it) {
+                    auto RenderableEnt = it.entity(i);
+                    flecs::entity renderable = it.pair(2).first();
+                    flecs::entity node = it.pair(2).second();
+                    auto NodeComp = node.get<Node>();
 
                     if (NodeComp) {
                         int X = NodeComp->x * 90;
                         int Y = NodeComp->y * 90;
                         DrawRectangle( X, Y, 80, 80, RED);
                     }
-                });
+                }
             });
 
     ecs.system<Player>("EndRaylibRender")
@@ -217,6 +214,7 @@ int main() {
     // Main game loop
     while (!WindowShouldClose())    // Detect window close button or ESC key
     {
+//        std::cout << "Frame" << std::endl;
         ecs.progress(GetFrameTime());
     }
 
@@ -227,5 +225,4 @@ int main() {
 
     return 0;
 
-    return 0;
 }
