@@ -4,3 +4,15 @@
 [submodule "third-party/flecs"]
 	path = third-party/flecs
 	url = git@github.com:SanderMertens/flecs.git
+[submodule "third-party/tracy"]
+	path = third-party/tracy
+	url = git@github.com:wolfpld/tracy.git
+[submodule "third-party/SDL"]
+	path = third-party/SDL
+	url = git@github.com:libsdl-org/SDL.git
+[submodule "third-party/glew"]
+	path = third-party/glew
+	url = git@github.com:nigels-com/glew.git
+[submodule "third-party/concurrentqueue"]
+	path = third-party/concurrentqueue
+	url = git@github.com:cameron314/concurrentqueue.git
