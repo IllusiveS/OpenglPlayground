@@ -4,10 +4,11 @@
 
 #include <cassert>
 #include <gl/glew.h>
-#include <SDL_opengl.h>
+#include <chrono>
 #include <iostream>
 #include "GLRenderer.h"
 #include "tracy/Tracy.hpp"
+#include "flecs/addons/cpp/mixins/query/impl.hpp"
 
 GLRenderer* GLRenderer::Singleton = nullptr;
 
@@ -74,7 +75,57 @@ void GLRenderer::init() {
         }
     }
 
+    texture_query = render_ecs.query_builder<Texture>().build();
+    shader_query = render_ecs.query_builder<Shader>().build();
 
+    GetShader("shaders/fragment.frag");
+    GetShader("shaders/vertex.vert");
+
+    render_ecs.system<Shader, NewShader>("Load Shaders")
+            .iter([](flecs::iter it, Shader* tex, NewShader* new_tex){
+                ZoneScopedN("Load Shaders");
+                for (auto i : it) {
+                    auto &current_tex = tex[i];
+                    current_tex.load();
+                    it.entity(i).remove<NewShader>();
+                }
+            });
+
+    render_ecs.system<Texture, NewTexture>("Load Textures")
+            .iter([](flecs::iter it, Texture* tex, NewTexture* new_tex){
+                ZoneScopedN("Load Textures");
+                for (auto i : it) {
+                    auto &current_tex = tex[i];
+                    current_tex.load(current_tex.filename);
+                    it.entity(i).remove<NewTexture>();
+                }
+            });
+
+    render_ecs.system("BeginRender")
+        .iter([](flecs::iter it) {
+            using namespace std::chrono_literals;
+            ZoneScopedN("BeginRender");
+            glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+        });
+
+    render_ecs.system("TestRender")
+            .iter([&](flecs::iter it) {
+                ZoneScopedN("TestRender");
+                // draw our first triangle
+                glUseProgram(shaderProgram);
+                glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
+                //glDrawArrays(GL_TRIANGLES, 0, 6);
+                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+                // glBindVertexArray(0); // no need to unbind it every time
+            });
+
+    render_ecs.system("EndRender")
+            .iter([&](flecs::iter it) {
+                ZoneScopedN("EndRender");
+                SDL_GL_SwapWindow(Window);
+
+            });
 }
 
 void GLRenderer::RenderThreadFunction()
@@ -84,7 +135,7 @@ void GLRenderer::RenderThreadFunction()
     for( ; ; )
     {
         if (ShouldRender) {
-            render();
+            render_ecs.progress(0.033);
             ShouldRender = false;
             IsRenderingFinished = true;
             cv.notify_one();
@@ -111,6 +162,45 @@ void GLRenderer::WaitForRenderEnd() {
         cv.wait(lk);
     }
 
+}
+
+
+flecs::entity GLRenderer::GetTexture(const std::string &filename) {
+    std::lock_guard g(RenderThreadLock);
+    auto ent = texture_query.find([&filename](Texture &tex) {
+        return tex.filename == filename;
+    });
+
+    if (ent == flecs::entity::null()) {
+        auto NewTextureEntity = render_ecs.entity();
+        NewTextureEntity
+            .add<Texture>()
+            .add<NewTexture>();
+
+        auto Tex = NewTextureEntity.get_mut<Texture>();
+        Tex->filename = filename;
+        return NewTextureEntity;
+    }
+    return ent;
+}
+
+flecs::entity GLRenderer::GetShader(const std::string &filename) {
+    std::lock_guard g(RenderThreadLock);
+    auto ent = shader_query.find([&filename](Shader &tex) {
+        return tex.filename == filename;
+    });
+
+    if (ent == flecs::entity::null()) {
+        auto NewTextureEntity = render_ecs.entity();
+        NewTextureEntity
+                .add<Shader>()
+                .add<NewShader>();
+
+        auto Tex = NewTextureEntity.get_mut<Shader>();
+        Tex->filename = filename;
+        return NewTextureEntity;
+    }
+    return ent;
 }
 
 bool GLRenderer::initGL() {
@@ -298,12 +388,7 @@ void GLRenderer::render()
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // draw our first triangle
-    glUseProgram(shaderProgram);
-    glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
-    //glDrawArrays(GL_TRIANGLES, 0, 6);
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-    // glBindVertexArray(0); // no need to unbind it every time
+
 
     SDL_GL_SwapWindow(Window);
 }
@@ -314,3 +399,4 @@ GLRenderer *GLRenderer::Get() {
     }
     return Singleton;
 }
+

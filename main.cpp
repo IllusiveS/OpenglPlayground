@@ -68,12 +68,17 @@ struct Renderable {
 
 int main() {
     GLRenderer::Get()->StartRenderThread();
-
     do {
         GLRenderer::Get()->TriggerRender();
+        using namespace std::chrono_literals;
+        const auto start = std::chrono::high_resolution_clock::now();
         FrameMark;
         ZoneScopedN("Main");
         GLRenderer::Get()->WaitForRenderEnd();
+        const auto end = std::chrono::high_resolution_clock::now();
+        const auto FrameTime = 1000ms / 60;
+
+        std::this_thread::sleep_for((FrameTime) - (end - start));
     } while(true);
 
     return 0;
