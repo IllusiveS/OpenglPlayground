@@ -81,6 +81,18 @@ void GLRenderer::init() {
     GetShader("shaders/fragment.frag");
     GetShader("shaders/vertex.vert");
 
+    GetMesh("meshes/cube.obj");
+
+    render_ecs.system<Mesh, NewMesh>("Load Meshes")
+            .iter([](flecs::iter it, Mesh* tex, NewMesh* new_tex){
+                ZoneScopedN("Load Meshes");
+                for (auto i : it) {
+                    auto &current_tex = tex[i];
+                    current_tex.load();
+                    it.entity(i).remove<NewMesh>();
+                }
+            });
+
     render_ecs.system<Shader, NewShader>("Load Shaders")
             .iter([](flecs::iter it, Shader* tex, NewShader* new_tex){
                 ZoneScopedN("Load Shaders");
@@ -106,7 +118,7 @@ void GLRenderer::init() {
             using namespace std::chrono_literals;
             ZoneScopedN("BeginRender");
             glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         });
 
     render_ecs.system("TestRender")
@@ -203,10 +215,30 @@ flecs::entity GLRenderer::GetShader(const std::string &filename) {
     return ent;
 }
 
+flecs::entity GLRenderer::GetMesh(const std::string &filename) {
+    std::lock_guard g(RenderThreadLock);
+    auto ent = mesh_query.find([&filename](Mesh &tex) {
+        return tex.filename == filename;
+    });
+
+    if (ent == flecs::entity::null()) {
+        auto NewTextureEntity = render_ecs.entity();
+        NewTextureEntity
+                .add<Mesh>()
+                .add<NewMesh>();
+
+        auto Tex = NewTextureEntity.get_mut<Mesh>();
+        Tex->filename = filename;
+        return NewTextureEntity;
+    }
+    return ent;
+}
+
 bool GLRenderer::initGL() {
     //Success flag
     bool SuccessResult = true;
 
+    glEnable(GL_DEPTH_TEST);
 
     // build and compile our shader program
     // ------------------------------------
@@ -386,7 +418,7 @@ void GLRenderer::render()
 
     ZoneScopedN("Render");
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 
 

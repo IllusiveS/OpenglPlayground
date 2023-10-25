@@ -30,6 +30,8 @@ public:
 private:
     ShaderType type;
 
+public:
+    GLuint GetID() const { return shaderProgram; };
     GLuint DetermineShaderType() const;
 };
 

@@ -19,3 +19,6 @@
 [submodule "third-party/glm"]
 	path = third-party/glm
 	url = git@github.com:g-truc/glm.git
+[submodule "third-party/assimp"]
+	path = third-party/assimp
+	url = https://github.com/assimp/assimp.git

@@ -14,6 +14,7 @@
 #include "Texture.h"
 #include "flecs.h"
 #include "Shader.h"
+#include "Mesh.h"
 
 class GLRenderer;
 
@@ -41,6 +42,7 @@ public:
     void TriggerRender();
 
     flecs::entity GetTexture(const std::string &filename);
+    flecs::entity GetMesh(const std::string &filename);
     flecs::entity GetShader(const std::string &filename);
 
     static GLRenderer* Get();
@@ -88,6 +90,7 @@ private:
 
     flecs::query<Texture> texture_query;
     flecs::query<Shader> shader_query;
+    flecs::query<Mesh> mesh_query;
 };
 
 
