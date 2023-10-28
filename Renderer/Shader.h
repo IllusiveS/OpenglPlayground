@@ -9,6 +9,13 @@
 
 #include <string>
 
+struct ShaderProgram{
+    GLuint ProgramID;
+};
+struct NewShaderProgram{};
+struct HasVertexShader{};
+struct HasFragmentShader{};
+
 enum ShaderType {
     SHADER_VERTEX
     ,SHADER_FRAGMENT

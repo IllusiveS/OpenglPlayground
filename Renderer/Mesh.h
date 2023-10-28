@@ -10,6 +10,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include "Shader.h"
+#include "Texture.h"
 
 #define MAX_BONE_INFLUENCE 4
 
@@ -30,20 +31,19 @@ struct Vertex {
     float m_Weights[MAX_BONE_INFLUENCE];
 };
 
-struct Texture {
-    unsigned int id;
-    std::string type;
-    std::string path;
-};
+//struct Texture {
+//    unsigned int id;
+//    std::string type;
+//    std::string path;
+//};
 
 class NewMesh{};
 
 class Mesh {
-private:
+public:
     // mesh Data
     std::vector<Vertex>       vertices;
     std::vector<unsigned int> indices;
-    std::vector<Texture>      textures;
     unsigned int VAO;
 
     // render data
@@ -53,7 +53,8 @@ private:
     void setupMesh();
 
 public:
-    Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices, std::vector<Texture> textures);
+    Mesh();
+    Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices);
 
     void Draw(Shader &shader);
     std::string filename;

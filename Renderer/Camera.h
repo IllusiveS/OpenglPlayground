@@ -7,6 +7,7 @@
 
 
 #include "glm/vec3.hpp"
+#include "glm/ext/matrix_float4x4.hpp"
 
 class Camera {
 public:
@@ -17,6 +18,8 @@ public:
     glm::vec3 cameraDirection;
     glm::vec3 cameraUp;
     glm::vec3 cameraRight;
+    glm::mat4 view;
+    glm::mat4 projection;
 };
 
 

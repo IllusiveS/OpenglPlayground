@@ -19,7 +19,7 @@ Shader::~Shader() {
 
 void Shader::load() {
     auto dot_pos = filename.find_last_of('.');
-    auto extension = filename.substr(dot_pos, 4);
+    auto extension = filename.substr(dot_pos, 5);
 
     if (extension == ".vert") {
         type = SHADER_VERTEX;

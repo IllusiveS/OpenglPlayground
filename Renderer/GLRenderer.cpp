@@ -9,6 +9,7 @@
 #include "GLRenderer.h"
 #include "tracy/Tracy.hpp"
 #include "flecs/addons/cpp/mixins/query/impl.hpp"
+#include "Camera.h"
 
 GLRenderer* GLRenderer::Singleton = nullptr;
 
@@ -34,6 +35,8 @@ void GLRenderer::StartRenderThread() {
 
 void GLRenderer::init() {
     uint32_t WindowFlags = SDL_WINDOW_OPENGL;
+
+
     Window = SDL_CreateWindow("OpenGL Test", 800, 600, WindowFlags);
     assert(Window);
 
@@ -41,6 +44,9 @@ void GLRenderer::init() {
     int32_t FullScreen = 0;
 
     //Create context
+    SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 4 );
+    SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 2 );
+    SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE );
     gContext = SDL_GL_CreateContext( Window );
     if( gContext == nullptr )
     {
@@ -49,9 +55,6 @@ void GLRenderer::init() {
     }
     else
     {
-        SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 3 );
-        SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 1 );
-        SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE );
 
         //Initialize GLEW
         glewExperimental = GL_TRUE;
@@ -77,21 +80,41 @@ void GLRenderer::init() {
 
     texture_query = render_ecs.query_builder<Texture>().build();
     shader_query = render_ecs.query_builder<Shader>().build();
+    model_query = render_ecs.query_builder<Model>().build();
 
-    GetShader("shaders/fragment.frag");
-    GetShader("shaders/vertex.vert");
+    auto FragShader = GetShader("shaders/fragment.frag");
+    auto VertShader = GetShader("shaders/vertex.vert");
 
-    GetMesh("meshes/cube.obj");
+    ProgramEntity = render_ecs.entity("DefaultProgram");
+    ProgramEntity.add<HasFragmentShader>(FragShader);
+    ProgramEntity.add<HasVertexShader>(VertShader);
+    ProgramEntity.add<ShaderProgram>();
+    ProgramEntity.add<NewShaderProgram>();
 
-    render_ecs.system<Mesh, NewMesh>("Load Meshes")
-            .iter([](flecs::iter it, Mesh* tex, NewMesh* new_tex){
+    GetModel("meshes/cube.obj");
+
+    auto CameraEnt = render_ecs.entity("Camera");
+    CameraEnt.add<Camera>();
+
+    render_ecs.system<Model, NewModel>("Load Models")
+            .iter([](flecs::iter it, Model* tex, NewModel* new_tex){
                 ZoneScopedN("Load Meshes");
                 for (auto i : it) {
                     auto &current_tex = tex[i];
-                    current_tex.load();
+                    current_tex.loadModel(current_tex.filename);
                     it.entity(i).remove<NewMesh>();
                 }
             });
+
+//    render_ecs.system<Mesh, NewMesh>("Load Meshes")
+//            .iter([](flecs::iter it, Mesh* tex, NewMesh* new_tex){
+//                ZoneScopedN("Load Meshes");
+//                for (auto i : it) {
+//                    auto &current_tex = tex[i];
+//                    current_tex.load();
+//                    it.entity(i).remove<NewMesh>();
+//                }
+//            });
 
     render_ecs.system<Shader, NewShader>("Load Shaders")
             .iter([](flecs::iter it, Shader* tex, NewShader* new_tex){
@@ -100,6 +123,28 @@ void GLRenderer::init() {
                     auto &current_tex = tex[i];
                     current_tex.load();
                     it.entity(i).remove<NewShader>();
+                }
+            });
+
+    render_ecs.system<ShaderProgram, NewShaderProgram>("Setup programs")
+            .iter([&](flecs::iter it, ShaderProgram* Progr, NewShaderProgram* NewProgr) {
+                ZoneScopedN("Load Programs");
+                for (auto i : it) {
+                    auto VertShaderEntity = it.entity(i).target<HasVertexShader>();
+                    assert(VertShaderEntity.has<Shader>());
+                    auto VertShader = VertShaderEntity.get<Shader>();
+                    auto FragShaderEntity = it.entity(i).target<HasFragmentShader>();
+                    assert(FragShaderEntity.has<Shader>());
+                    auto FragShader = VertShaderEntity.get<Shader>();
+
+                    auto &ShaderProg = Progr[i];
+                    ShaderProg.ProgramID = glCreateProgram();
+                    glAttachShader(ShaderProg.ProgramID, VertShader->GetID());
+                    glAttachShader(ShaderProg.ProgramID, FragShader->GetID());
+                    glLinkProgram(ShaderProg.ProgramID);
+                    //checkCompileErrors(ShaderProg.ProgramID, "PROGRAM");
+                    glValidateProgram(ShaderProg.ProgramID);
+                    it.entity(i).remove<NewShaderProgram>();
                 }
             });
 
@@ -121,22 +166,53 @@ void GLRenderer::init() {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         });
 
-    render_ecs.system("TestRender")
-            .iter([&](flecs::iter it) {
-                ZoneScopedN("TestRender");
-                // draw our first triangle
-                glUseProgram(shaderProgram);
-                glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
-                //glDrawArrays(GL_TRIANGLES, 0, 6);
-                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
-                // glBindVertexArray(0); // no need to unbind it every time
+    render_ecs.system<Camera>("RenderMeshes")
+            .iter([&](flecs::iter it, Camera* cameras) {
+                ZoneScopedN("RenderMeshes");
+                auto ProgId = ProgramEntity.get<ShaderProgram>()->ProgramID;
+                glUseProgram(ProgId);
+                for (auto i : it) {
+                    Camera& cam = cameras[i];
+
+                    model_query.iter([&](flecs::iter it, Model* mesh) {
+                        for (auto& current_mesh : mesh->meshes) {
+                            glBindVertexArray(current_mesh.VAO);
+                            //Temporary only one mesh
+                            auto meshMatrix = glm::mat4(1.0);
+                            auto ModelLocation = glGetUniformLocation(ProgId, "model");
+                            glUniformMatrix4fv(ModelLocation, 1, GL_FALSE, &meshMatrix[0][0]);
+                            auto viewLocation = glGetUniformLocation(ProgId, "view");
+                            glUniformMatrix4fv(glGetUniformLocation(ProgId, "view"), 1, GL_FALSE, &cam.view[0][0]);
+                            auto projectionLocation = glGetUniformLocation(ProgId, "projection");
+                            glUniformMatrix4fv(glGetUniformLocation(ProgId, "projection"), 1, GL_FALSE, &cam.projection[0][0]);
+                            glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(current_mesh.indices.size()), GL_UNSIGNED_INT, 0);
+                            //This does not work, for some reason
+                            //glDrawArrays(GL_TRIANGLES, 0, current_mesh.indices.size());
+                            //glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(current_mesh.indices.size()), GL_UNSIGNED_INT, 0);
+                            glBindVertexArray(0);
+
+                            // always good practice to set everything back to defaults once configured.
+                            glActiveTexture(GL_TEXTURE0);
+                        }
+                    });
+                }
             });
+
+//    render_ecs.system("TestRender")
+//            .iter([&](flecs::iter it) {
+//                ZoneScopedN("TestRender");
+//                // draw our first triangle
+//                glUseProgram(shaderProgram);
+//                glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
+//                //glDrawArrays(GL_TRIANGLES, 0, 6);
+//                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+//                // glBindVertexArray(0); // no need to unbind it every time
+//            });
 
     render_ecs.system("EndRender")
             .iter([&](flecs::iter it) {
                 ZoneScopedN("EndRender");
                 SDL_GL_SwapWindow(Window);
-
             });
 }
 
@@ -215,21 +291,21 @@ flecs::entity GLRenderer::GetShader(const std::string &filename) {
     return ent;
 }
 
-flecs::entity GLRenderer::GetMesh(const std::string &filename) {
+flecs::entity GLRenderer::GetModel(const std::string &filename) {
     std::lock_guard g(RenderThreadLock);
-    auto ent = mesh_query.find([&filename](Mesh &tex) {
+    auto ent = model_query.find([&filename](Model &tex) {
         return tex.filename == filename;
     });
 
     if (ent == flecs::entity::null()) {
-        auto NewTextureEntity = render_ecs.entity();
-        NewTextureEntity
-                .add<Mesh>()
-                .add<NewMesh>();
+        auto NewModelEntity = render_ecs.entity();
+        NewModelEntity
+                .add<Model>()
+                .add<NewModel>();
 
-        auto Tex = NewTextureEntity.get_mut<Mesh>();
-        Tex->filename = filename;
-        return NewTextureEntity;
+        auto pModel = NewModelEntity.get_mut<Model>();
+        pModel->filename = filename;
+        return NewModelEntity;
     }
     return ent;
 }
