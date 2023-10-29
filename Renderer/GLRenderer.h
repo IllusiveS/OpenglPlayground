@@ -50,7 +50,7 @@ public:
 
     void WaitForRenderEnd();
 
-private:
+public:
     flecs::world render_ecs;
 
     std::map<std::string, std::shared_ptr<Texture>> Textures;

@@ -10,6 +10,7 @@
 #include "tracy/Tracy.hpp"
 #include "flecs/addons/cpp/mixins/query/impl.hpp"
 #include "Camera.h"
+#include "../Modules/ImGUI/ImguiModule.h"
 
 GLRenderer* GLRenderer::Singleton = nullptr;
 
@@ -96,6 +97,8 @@ void GLRenderer::init() {
     auto CameraEnt = render_ecs.entity("Camera");
     CameraEnt.add<Camera>();
 
+    render_ecs.import<ImGUI::module>();
+
     render_ecs.system<Model, NewModel>("Load Models")
             .iter([](flecs::iter it, Model* tex, NewModel* new_tex){
                 ZoneScopedN("Load Meshes");
@@ -171,23 +174,25 @@ void GLRenderer::init() {
                 ZoneScopedN("RenderMeshes");
                 auto ProgId = ProgramEntity.get<ShaderProgram>()->ProgramID;
                 glUseProgram(ProgId);
+
                 for (auto i : it) {
                     Camera& cam = cameras[i];
+
+                    const auto viewLocation = glGetUniformLocation(ProgId, "view");
+                    glUniformMatrix4fv(viewLocation, 1, GL_FALSE, &cam.view[0][0]);
+                    const auto projectionLocation = glGetUniformLocation(ProgId, "projection");
+                    glUniformMatrix4fv(projectionLocation, 1, GL_FALSE, &cam.projection[0][0]);
 
                     model_query.iter([&](flecs::iter it, Model* mesh) {
                         for (auto& current_mesh : mesh->meshes) {
                             glBindVertexArray(current_mesh.VAO);
                             //Temporary only one mesh
                             auto meshMatrix = glm::mat4(1.0);
-                            auto ModelLocation = glGetUniformLocation(ProgId, "model");
+                            const auto ModelLocation = glGetUniformLocation(ProgId, "model");
                             glUniformMatrix4fv(ModelLocation, 1, GL_FALSE, &meshMatrix[0][0]);
-                            auto viewLocation = glGetUniformLocation(ProgId, "view");
-                            glUniformMatrix4fv(glGetUniformLocation(ProgId, "view"), 1, GL_FALSE, &cam.view[0][0]);
-                            auto projectionLocation = glGetUniformLocation(ProgId, "projection");
-                            glUniformMatrix4fv(glGetUniformLocation(ProgId, "projection"), 1, GL_FALSE, &cam.projection[0][0]);
-                            glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(current_mesh.indices.size()), GL_UNSIGNED_INT, 0);
+                            glDrawElements(  GL_LINE_STRIP, static_cast<unsigned int>(current_mesh.indices.size()), GL_UNSIGNED_INT, 0);
                             //This does not work, for some reason
-                            //glDrawArrays(GL_TRIANGLES, 0, current_mesh.indices.size());
+                            //glDrawArrays(GL_LINES, 0, current_mesh.indices.size());
                             //glDrawElements(GL_TRIANGLES, static_cast<unsigned int>(current_mesh.indices.size()), GL_UNSIGNED_INT, 0);
                             glBindVertexArray(0);
 
@@ -210,6 +215,7 @@ void GLRenderer::init() {
 //            });
 
     render_ecs.system("EndRender")
+            .kind(flecs::PostFrame)
             .iter([&](flecs::iter it) {
                 ZoneScopedN("EndRender");
                 SDL_GL_SwapWindow(Window);

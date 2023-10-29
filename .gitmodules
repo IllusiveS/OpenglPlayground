@@ -22,3 +22,6 @@
 [submodule "third-party/assimp"]
 	path = third-party/assimp
 	url = https://github.com/assimp/assimp.git
+[submodule "third-party/imgui"]
+	path = third-party/imgui
+	url = git@github.com:ocornut/imgui.git

@@ -17,3 +17,16 @@ add_subdirectory(glm)
 
 
 add_subdirectory(assimp)
+
+#imgui
+
+FILE(GLOB var "${CMAKE_CURRENT_SOURCE_DIR}/imgui/*.cpp")
+
+set(var ${var} imgui/backends/imgui_impl_sdl3.cpp imgui/backends/imgui_impl_opengl3.cpp imgui/misc/cpp/imgui_stdlib.cpp)
+
+ADD_LIBRARY( imgui STATIC
+        ${var})
+
+target_include_directories(imgui PRIVATE SDL/include)
+target_include_directories(imgui PRIVATE imgui/backends)
+target_include_directories(imgui PRIVATE imgui)
